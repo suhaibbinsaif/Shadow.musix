@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIGMA PERMANENT PLAYER</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #ff0055;
+            --secondary: #00d4ff;
+            --bg: #050505;
+            --card: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            background: var(--bg);
+            color: white;
+            font-family: 'Poppins', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 400px;
+            background: var(--card);
+            backdrop-filter: blur(20px);
+            padding: 25px;
+            border-radius: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        }
+
+        /* আপলোড বাটন স্টাইল */
+        .upload-area {
+            margin-bottom: 25px;
+        }
+        .custom-upload {
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            padding: 12px 25px;
+            border-radius: 50px;
+            cursor: pointer;
+            display: inline-block;
+            font-weight: 600;
+            transition: 0.3s;
+            box-shadow: 0 5px 15px rgba(255, 0, 85, 0.3);
+        }
+        .custom-upload:hover { transform: scale(1.05); }
+        #file-input { display: none; }
+
+        .disc {
+            width: 160px;
+            height: 160px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            background: url('https://wallpapers.com/images/hd/sigma-male-cool-face-90q5y0j7qj0e2v5m.jpg') center/cover;
+            border: 4px solid #111;
+            box-shadow: 0 0 25px var(--primary);
+            animation: rotate 10s linear infinite;
+            animation-play-state: paused;
+        }
+        .playing .disc { animation-play-state: running; }
+
+        .song-info h2 { font-size: 1.3rem; margin: 10px 0; color: var(--secondary); }
+        .song-info p { color: #888; font-size: 0.8rem; }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 25px 0;
+        }
+
+        .play-btn {
+            width: 60px;
+            height: 60px;
+            background: white;
+            color: black;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        /* প্লেলিস্ট সেকশন */
+        .playlist {
+            background: rgba(0,0,0,0.3);
+            border-radius: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: left;
+            margin-top: 20px;
+        }
+
+        .track-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .track-item:hover { background: rgba(255,255,255,0.05); }
+        .track-item.active { border-left: 4px solid var(--primary); background: rgba(255,0,85,0.1); }
+        
+        .delete-icon { color: #ff4444; opacity: 0.6; padding: 5px; }
+        .delete-icon:hover { opacity: 1; }
+
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="player-container">
+        <div class="upload-area">
+            <label for="file-input" class="custom-upload">
+                <i class="fas fa-plus"></i> মিউজিক আপলোড করুন
+            </label>
+            <input type="file" id="file-input" accept="audio/*" multiple>
+        </div>
+
+        <div class="disc"></div>
+
+        <div class="song-info">
+            <h2 id="title">No Music Found</h2>
+            <p id="artist">Upload and it will stay forever</p>
+        </div>
+
+        <div class="controls">
+            <i class="fas fa-backward fa-lg" onclick="prev()"></i>
+            <div class="play-btn" onclick="togglePlay()"><i class="fas fa-play" id="main-icon"></i></div>
+            <i class="fas fa-forward fa-lg" onclick="next()"></i>
+        </div>
+
+        <div class="playlist" id="playlist">
+            </div>
+    </div>
+
+    <script>
+        let db;
+        let tracks = [];
+        let currentIdx = 0;
+        let isPlaying = false;
+        const audio = new Audio();
+
+        // ১. ডাটাবেস তৈরি (IndexedDB)
+        const request = indexedDB.open("SigmaStorage", 1);
+        
+        request.onupgradeneeded = (e) => {
+            db = e.target.result;
+            db.createObjectStore("library", { keyPath: "id", autoIncrement: true });
+        };
+
+        request.onsuccess = (e) => {
+            db = e.target.result;
+            refreshLibrary(); // পেজ খুললেই আগের গান লোড হবে
+        };
+
+        // ২. ফাইল আপলোড এবং সেভ করা
+        document.getElementById('file-input').onchange = (e) => {
+            const files = e.target.files;
+            for (let file of files) {
+                const reader = new FileReader();
+                reader.readAsArrayBuffer(file);
+                reader.onload = (event) => {
+                    const newSong = {
+                        title: file.name.replace(/\.[^/.]+$/, ""),
+                        data: event.target.result,
+                        type: file.type
+                    };
+                    const transaction = db.transaction(["library"], "readwrite");
+                    transaction.objectStore("library").add(newSong);
+                    transaction.oncomplete = () => refreshLibrary();
+                };
+            }
+        };
+
+        // ৩. লাইব্রেরি রিফ্রেশ করা
+        function refreshLibrary() {
+            const transaction = db.transaction(["library"], "readonly");
+            const store = transaction.objectStore("library");
+            store.getAll().onsuccess = (e) => {
+                tracks = e.target.result;
+                updatePlaylistUI();
+                if(tracks.length > 0 && audio.src === "") loadTrack(0);
+            };
+        }
+
+        // ৪. প্লেলিস্ট UI আপডেট
+        function updatePlaylistUI() {
+            const list = document.getElementById('playlist');
+            list.innerHTML = "";
+            tracks.forEach((track, i) => {
+                const div = document.createElement('div');
+                div.className = `track-item ${i === currentIdx ? 'active' : ''}`;
+                div.innerHTML = `
+                    <div style="flex:1" onclick="playNow(${i})">${i+1}. ${track.title}</div>
+                    <i class="fas fa-trash-alt delete-icon" onclick="deleteTrack(${track.id})"></i>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function loadTrack(i) {
+            if(!tracks[i]) return;
+            currentIdx = i;
+            const track = tracks[i];
+            const blob = new Blob([track.data], { type: track.type });
+            if(audio.src) URL.revokeObjectURL(audio.src);
+            audio.src = URL.createObjectURL(blob);
+            document.getElementById('title').innerText = track.title;
+            document.getElementById('artist').innerText = "Stored in Web App";
+            updatePlaylistUI();
+        }
+
+        function togglePlay() {
+            if(tracks.length === 0) return alert("আগে মিউজিক আপলোড করুন!");
+            if(isPlaying) {
+                audio.pause();
+                document.getElementById('main-icon').className = "fas fa-play";
+                document.getElementById('player-container').classList.remove('playing');
+            } else {
+                audio.play();
+                document.getElementById('main-icon').className = "fas fa-pause";
+                document.getElementById('player-container').classList.add('playing');
+            }
+            isPlaying = !isPlaying;
+        }
+
+        function playNow(i) {
+            loadTrack(i);
+            isPlaying = false;
+            togglePlay();
+        }
+
+        function next() { currentIdx = (currentIdx + 1) % tracks.length; playNow(currentIdx); }
+        function prev() { currentIdx = (currentIdx - 1 + tracks.length) % tracks.length; playNow(currentIdx); }
+
+        function deleteTrack(id) {
+            const transaction = db.transaction(["library"], "readwrite");
+            transaction.objectStore("library").delete(id);
+            transaction.oncomplete = () => refreshLibrary();
+        }
+
+        audio.onended = () => next();
+    </script>
+</body>
+  </html>
